@@ -293,15 +293,15 @@ class KPFCNN(BaseModel):
         for block_i, block_op in enumerate(self.encoder_blocks):
             if block_i in self.encoder_skips:
                 skip_conn.append(x)
-            x = block_op(x, inputs, training=training)
+            x = block_op(x, batch=inputs, training=training)
 
         for block_i, block_op in enumerate(self.decoder_blocks):
             if block_i in self.decoder_concats:
                 x = tf.concat([x, skip_conn.pop()], axis=1)
-            x = block_op(x, inputs, training=training)
+            x = block_op(x, batch=inputs, training=training)
 
-        x = self.head_mlp(x, inputs, training)
-        x = self.head_softmax(x, inputs, training)
+        x = self.head_mlp(x, batch=inputs, training=training)
+        x = self.head_softmax(x, batch=inputs, training=training)
 
         return x
 
@@ -1049,7 +1049,11 @@ def tf_batch_neighbors(queries, points, q_batches, p_batches, r):
         tf.concat([tf.constant([0]), tf.cumsum(q_batches)], axis=0), tf.int64)
     p_splits = tf.cast(
         tf.concat([tf.constant([0]), tf.cumsum(p_batches)], axis=0), tf.int64)
-    result = nns(points, queries, r, p_splits, q_splits)
+    result = nns(points,
+                 queries,
+                 radius=r,
+                 points_row_splits=p_splits,
+                 queries_row_splits=q_splits)
 
     idx = result.neighbors_index
     splits = result.neighbors_row_splits

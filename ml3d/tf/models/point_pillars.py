@@ -96,11 +96,11 @@ class PointPillars(BaseModel):
                                             coors,
                                             training=training)
 
-        batch_size = int(coors[-1, 0].numpy()) + 1
+        batch_size = tf.cast(coors[-1, 0], tf.int32) + 1
 
         x = self.middle_encoder(voxel_features,
                                 coors,
-                                batch_size,
+                                batch_size=batch_size,
                                 training=training)
         x = self.backbone(x, training=training)
         x = self.neck(x, training=training)
@@ -693,19 +693,19 @@ class PointPillarsScatter(tf.keras.layers.Layer):
         self.fp16_enabled = False
 
     #@auto_fp16(apply_to=('voxel_features', ))
-    def call(self, voxel_features, coors, batch_size, training=False):
+    def call(self, voxel_features, coors, *, batch_size, training=False):
         """Scatter features of single sample.
 
         Args:
             voxel_features (tf.Tensor): Voxel features in shape (N, M, C).
             coors (tf.Tensor): Coordinates of each voxel in shape (N, 4).
                 The first column indicates the sample ID.
-            batch_size (int): Number of samples in the current batch.
+            batch_size (int or tf.Tensor): Number of samples in the current batch.
             training (bool): Whether we are training or not?
         """
         # batch_canvas will be the final output.
         batch_canvas = []
-        for batch_itt in range(batch_size):
+        for batch_itt in range(int(batch_size)):
             # Create the canvas for this sample
             canvas_shape = (self.nx * self.ny, self.in_channels)
 
@@ -851,20 +851,22 @@ class SECONDFPN(tf.keras.layers.Layer):
                     kernel_size=upsample_strides[i],
                     strides=upsample_strides[i],
                     use_bias=False,
-                    data_format='channels_first',
+                    data_format='channels_last',
                 )
             else:
                 stride = np.round(1 / stride).astype(np.int64)
-                upsample_layer = tf.keras.layers.Conv2D(  # TODO : convert to channels last.
+                upsample_layer = tf.keras.layers.Conv2D(
                     filters=out_channels[i],
                     kernel_size=stride,
-                    data_format='channels_first',
+                    data_format='channels_last',
                     use_bias=False,
                     strides=stride,
                     kernel_initializer='he_normal')
 
             deblock = tf.keras.Sequential()
+            deblock.add(tf.keras.layers.Permute((2, 3, 1)))  # NCHW -> NHWC
             deblock.add(upsample_layer)
+            deblock.add(tf.keras.layers.Permute((3, 1, 2)))  # NHWC -> NCHW
             deblock.add(
                 tf.keras.layers.BatchNormalization(axis=1,
                                                    epsilon=1e-3,
